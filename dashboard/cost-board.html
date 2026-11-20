@@ -1,0 +1,823 @@
+<!doctype html>
+<html lang="en" dir="ltr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>AI Cost Board</title>
+<style>
+  :root{
+    --bg:#ffffff; --fg:#0b0d12; --muted:#4a5060; --line:#d5d8df; --panel:#f3f4f7;
+    --accent:#0b5fff; --spend:#c2410c; --good:#15803d; --bad:#b91c1c; --bar:#0b5fff; --barbg:#e3e6ec;
+  }
+  :root[data-theme="dark"]{
+    --bg:#05070b; --fg:#f5f7fb; --muted:#a8afbf; --line:#2a2f3a; --panel:#11151d;
+    --accent:#5b9bff; --spend:#ff8a4c; --good:#4ade80; --bad:#f87171; --bar:#5b9bff; --barbg:#1f2430;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%}
+  body{background:var(--bg);color:var(--fg);font:16px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,"Noto Sans Hebrew",Arial,sans-serif}
+  button,input,select{font:inherit}
+  button{cursor:pointer;border:1px solid var(--line);background:var(--panel);color:var(--fg);border-radius:8px;padding:8px 14px}
+  button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+  button:disabled{opacity:.5;cursor:default}
+  [hidden]{display:none!important}
+
+  /* Setup screen */
+  #setup{max-width:760px;margin:0 auto;padding:32px 16px}
+  #setup h1{font-size:28px;margin:0 0 4px}
+  #setup p{color:var(--muted);margin:6px 0 16px}
+  #setup label{display:block;font-weight:600;margin:16px 0 6px}
+  #setup input[type=password],#setup input[type=number],#setup select{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:8px;background:var(--panel);color:var(--fg)}
+  .settings{display:grid;grid-template-columns:1fr 1fr;gap:0 16px;padding-bottom:16px;border-bottom:1px solid var(--line)}
+  .settings label{margin-top:8px!important}
+  #rateRow{grid-column:1/-1}
+  #rateRow .row{margin-top:0;flex-wrap:nowrap}
+  #rateRow input{flex:1}
+  #rateMsg{color:var(--muted);font-size:14px;margin-top:6px}
+  #rateMsg.err{color:var(--bad);font-weight:600}
+  .row{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-top:10px}
+  .check{display:flex;gap:8px;align-items:center;font-weight:400!important;margin:10px 0 0!important;color:var(--muted)}
+  #setupMsg{margin-top:14px;min-height:1.4em;font-weight:600}
+  #setupMsg.err{color:var(--bad)}
+  #keyList{list-style:none;padding:0;margin:8px 0 0;border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  #keyList li{display:flex;justify-content:space-between;gap:12px;padding:12px 14px;border-top:1px solid var(--line);cursor:pointer}
+  #keyList li:first-child{border-top:0}
+  #keyList li:hover,#keyList li:focus{background:var(--panel);outline:none}
+  #keyList .meta{color:var(--muted);font-size:14px;text-align:end;white-space:nowrap}
+  #keyList .off{opacity:.5}
+  #keyList li.ws{background:var(--panel);color:var(--muted);font-size:14px;font-weight:700;cursor:default;padding:8px 14px}
+  details{margin-top:28px;color:var(--muted);text-align:left}
+  details summary{cursor:pointer;font-weight:600}
+
+  /* Board (projector view) */
+  #board{min-height:100%;display:flex;flex-direction:column;padding:2.5vh 3vw}
+  .top{display:flex;justify-content:space-between;align-items:center;gap:16px;font-size:clamp(16px,2vw,32px);color:var(--muted)}
+  #wsLine{font-weight:600;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  /* Key name is large so the student using that key can read it from the back of the room. */
+  /* The largest text scales with height as well as width so the board fits 720p projectors without scrolling. */
+  #keyName{font-size:clamp(32px,min(6vw,9vh),120px);font-weight:800;line-height:1.1;color:var(--fg);max-width:94vw;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .cycleBox{margin-top:16px;padding:12px 14px;border:1px dashed var(--line);border-radius:10px}
+  .cycleTitle{font-weight:600}
+  .cycleGrid{display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+  .cycleGrid label{margin-top:8px!important;font-weight:400!important}
+  #status{display:flex;align-items:center;gap:.4em;white-space:nowrap}
+  #status::before{content:"";width:.6em;height:.6em;border-radius:50%;background:var(--good)}
+  #status.stale::before{background:var(--bad)}
+  .hero{flex:1;display:flex;flex-direction:column;justify-content:center;align-items:center;text-align:center}
+  #heroLabel{font-size:clamp(20px,3.2vw,52px);color:var(--muted);font-weight:600}
+  #heroValue{font-size:clamp(48px,min(11vw,17vh),210px);font-weight:800;line-height:1;font-variant-numeric:tabular-nums;letter-spacing:-.02em;margin:.08em 0;unicode-bidi:isolate}
+  #heroPlain{font-size:clamp(18px,2.4vw,40px);color:var(--muted);min-height:1.4em}
+  #barWrap{width:min(80vw,1400px);height:clamp(14px,2.2vh,30px);background:var(--barbg);border-radius:999px;overflow:hidden;margin-top:2vh}
+  #bar{height:100%;width:100%;background:var(--bar);transition:width .8s ease}
+  #flash{font-size:clamp(24px,min(5vw,7vh),90px);font-weight:800;color:var(--spend);height:1.2em;opacity:0;font-variant-numeric:tabular-nums;unicode-bidi:isolate}
+  #flash.show{animation:pop 2.4s ease-out}
+  @keyframes pop{0%{opacity:0;transform:translateY(.3em)}10%{opacity:1;transform:none}75%{opacity:1}100%{opacity:0}}
+  .tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:2vw;margin-top:2vh}
+  .tile{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:1.6vh 1.6vw}
+  .tile .k{font-size:clamp(14px,1.6vw,28px);color:var(--muted);font-weight:600}
+  .tile .v{font-size:clamp(28px,4.2vw,76px);font-weight:800;font-variant-numeric:tabular-nums;line-height:1.1;unicode-bidi:isolate}
+  .tile .s{font-size:clamp(13px,1.3vw,22px);color:var(--muted)}
+  .footer{display:flex;justify-content:space-between;align-items:center;gap:16px;margin-top:1.6vh}
+  #rateNote{font-size:clamp(13px,1.3vw,22px);color:var(--muted)}
+  .controls{display:flex;gap:8px;margin-inline-start:auto;opacity:.35;transition:opacity .2s}
+  .controls:hover,.controls:focus-within{opacity:1}
+  @media (max-width:700px){ .tiles,.settings,.cycleGrid{grid-template-columns:1fr} }
+  @media (prefers-reduced-motion:reduce){ #flash.show{animation:none;opacity:1} #bar{transition:none} }
+</style>
+</head>
+<body>
+
+<section id="setup">
+  <h1 data-t="title">AI Cost Board</h1>
+  <p data-t="subtitle"></p>
+
+  <div class="settings">
+    <div>
+      <label for="langSel" data-t="language"></label>
+      <select id="langSel">
+        <option value="en">English</option>
+        <option value="he">עברית (Hebrew)</option>
+      </select>
+    </div>
+    <div>
+      <label for="curSel" data-t="currency"></label>
+      <select id="curSel">
+        <option value="USD" data-t="curUSD"></option>
+        <option value="ILS" data-t="curILS"></option>
+      </select>
+    </div>
+    <div id="rateRow" hidden>
+      <label for="rate" data-t="rateLabel"></label>
+      <div class="row">
+        <input id="rate" type="number" min="0" step="0.0001" inputmode="decimal">
+        <button id="rateBtn" data-t="rateBtn"></button>
+      </div>
+      <div id="rateMsg" role="status"></div>
+    </div>
+  </div>
+
+  <label for="mgmt" data-t="mgmtLabel"></label>
+  <input id="mgmt" type="password" autocomplete="off" spellcheck="false" placeholder="sk-or-v1-…" dir="ltr">
+  <label class="check"><input id="remember" type="checkbox"> <span data-t="remember"></span></label>
+  <div class="row"><button id="loadBtn" class="primary" data-t="loadBtn"></button></div>
+  <div id="setupMsg" role="status"></div>
+
+  <div id="pick" hidden>
+    <label data-t="pickLabel"></label>
+    <ul id="keyList"></ul>
+    <div class="cycleBox">
+      <div class="cycleTitle" data-t="cycleLabel"></div>
+      <div class="cycleGrid">
+        <div id="cycleWsWrap">
+          <label for="cycleWsSel" data-t="cycleWsLabel"></label>
+          <select id="cycleWsSel"></select>
+        </div>
+        <div>
+          <label for="dwellSel" data-t="dwellLabel"></label>
+          <select id="dwellSel">
+            <option value="1"></option>
+            <option value="2"></option>
+            <option value="3"></option>
+            <option value="5"></option>
+            <option value="10" selected></option>
+            <option value="15"></option>
+            <option value="30"></option>
+            <option value="60"></option>
+          </select>
+        </div>
+      </div>
+      <label class="check"><input id="includeAll" type="checkbox" checked> <span data-t="includeAll"></span></label>
+      <div class="row">
+        <button id="cycleBtn" class="primary" data-t="cycleBtn"></button>
+        <button id="allBtn" data-t="allOnlyBtn"></button>
+      </div>
+    </div>
+    <label for="pollSel" data-t="pollLabel"></label>
+    <select id="pollSel">
+      <option value="3"></option>
+      <option value="5" selected></option>
+      <option value="10"></option>
+      <option value="30"></option>
+    </select>
+  </div>
+
+  <!-- Instructor notes stay in English in every UI language. -->
+  <details lang="en" dir="ltr">
+    <summary>For instructors: how this works</summary>
+    <p>A management key (create one at openrouter.ai/settings/management-keys) can list, create and delete every API key in the workspace, so it is never shown on screen and is kept only in this browser tab unless you tick "Remember". This page reads <code>GET https://openrouter.ai/api/v1/keys/{hash}</code> on a timer and shows the key's <code>usage</code> (dollars spent, all time) and <code>limit_remaining</code> (dollars left, if the key has a credit limit). It never changes a key. Keys from every workspace in the account are listed (via <code>GET /api/v1/workspaces</code>), grouped by workspace when there is more than one. "This class" counts from the moment the board opened. Each jump in spending is usually one AI request, but if several requests land between checks they show as one jump. OpenRouter can take a few seconds to record a request's cost.</p>
+    <p>OpenRouter bills in US dollars. In shekels, the board converts with the rate shown at the bottom of the screen: the European Central Bank rate from frankfurter.dev, fetched when you choose shekels or click "Get today's rate", or a rate you type in yourself. The Hebrew interface turns the layout right-to-left; these notes stay in English.</p>
+    <p>Two ways to show keys: click one key to show only that key, or use "Cycle through every key in a workspace" to show each enabled key in turn for the chosen number of seconds (1 to 60). "Entire Class" adds up every enabled key in the workspace: it can be part of the cycle (shown first) or shown on its own with "Show Entire Class only". It shows money left only when every key has a spending limit; otherwise it shows the total spent. While cycling, one request per check reads the whole workspace, so every key's "this class" total stays correct even while it is off screen.</p>
+    <p>Keyboard on the board: <b>F</b> full screen, <b>Space</b> pause/resume cycling, <b>←</b>/<b>→</b> previous/next key while cycling, <b>T</b> light/dark, <b>L</b> switches between English with dollars and Hebrew with shekels (the class count keeps running), <b>Esc</b> or <b>K</b> back to key list. The keys work with a Hebrew keyboard layout too.</p>
+  </details>
+</section>
+
+<section id="board" hidden>
+  <div class="top">
+    <div id="wsLine"></div>
+    <div id="status"></div>
+  </div>
+  <div class="hero">
+    <div id="keyName"></div>
+    <div id="heroLabel"></div>
+    <div id="heroValue"></div>
+    <div id="heroPlain"></div>
+    <div id="barWrap"><div id="bar"></div></div>
+    <div id="flash" aria-live="polite"></div>
+  </div>
+  <div class="tiles">
+    <div class="tile"><div class="k" data-t="tClass"></div><div class="v" id="tClass"></div><div class="s" id="tClassSub"></div></div>
+    <div class="tile"><div class="k" data-t="tLast"></div><div class="v" id="tLast">—</div><div class="s" id="tLastSub"></div></div>
+    <div class="tile"><div class="k" data-t="tRate"></div><div class="v" id="tRate">—</div><div class="s" id="tRateSub"></div></div>
+  </div>
+  <div class="footer">
+    <div id="rateNote"></div>
+    <div class="controls">
+      <button id="pauseBtn" title="Space"></button>
+      <button id="langBtn" title="L" data-t="langBtn"></button>
+      <button id="themeBtn" title="T" data-t="themeBtn"></button>
+      <button id="fsBtn" title="F" data-t="fsBtn"></button>
+      <button id="backBtn" title="Esc" data-t="backBtn"></button>
+    </div>
+  </div>
+</section>
+
+<script>
+const API = "https://openrouter.ai/api/v1";
+// European Central Bank reference rate, CORS-enabled, no key needed.
+const RATE_URL = "https://api.frankfurter.dev/v1/latest?base=USD&symbols=ILS";
+const PAGE_SIZE = 100, MAX_PAGES = 20, RATE_MIN_SECONDS = 60, MAX_ILS_PER_USD = 100;
+const $ = id => document.getElementById(id);
+
+let mgmtKey = '', pollTimer = null, cycleTimer = null, pollSeconds = 5, lastKeys = [], multiWs = false;
+// Board state while the board is showing:
+//   {mode:'single'|'cycle', wsId, wsName, hashes, idx, track, startTime, okTime, viaList, paused, dwell}
+// track[hash] = {name, startUsage, lastUsage, lastChange, lastChangeTime, lastKey}
+let state = null;
+// Pseudo-key in state.hashes for the "Entire Class" view: every tracked key added together.
+const ALL = '__all__';
+const cur = () => { const h = state.hashes[state.idx]; return h === ALL ? classTracker() : state.track[h]; };
+
+// Builds a tracker-shaped view of the whole workspace. "Money left" is only meaningful
+// when every key has a limit, so otherwise the limit fields are null and the board shows spend.
+function classTracker(){
+  const trs = Object.values(state.track);
+  const sum = f => trs.reduce((a, tr) => a + (f(tr) || 0), 0);
+  const latest = trs.filter(tr => tr.lastChangeTime != null).sort((a, b) => b.lastChangeTime - a.lastChangeTime)[0];
+  const allLimited = trs.every(tr => tr.lastKey.limit != null && tr.lastKey.limit_remaining != null);
+  const usage = sum(tr => tr.lastUsage);
+  return {isAll:true, name:t('entireClass'), startUsage:sum(tr => tr.startUsage), lastUsage:usage,
+          lastChange: latest ? latest.lastChange : null, lastChangeTime: latest ? latest.lastChangeTime : null,
+          lastChangeBy: latest ? (latest.name || t('unnamed')) : '',
+          lastKey:{usage, limit: allLimited ? sum(tr => tr.lastKey.limit) : null,
+                   limit_remaining: allLimited ? sum(tr => tr.lastKey.limit_remaining) : null}};
+}
+let lang = 'en', currency = 'USD', ilsPerUsd = null, rateSrc = ''; // rateSrc: 'manual' or the ECB date
+
+// ---- UI strings. Plain strings or functions taking a vars object. ----
+const RESET = {
+  en: {daily:'daily', weekly:'weekly', monthly:'monthly'},
+  he: {daily:'כל יום', weekly:'כל שבוע', monthly:'כל חודש'}
+};
+const STR = {
+  en: {
+    title: 'AI Cost Board',
+    subtitle: 'Shows, live on a projector, how much money an OpenRouter API key has spent while the class uses it.',
+    language: 'Language', currency: 'Currency',
+    curUSD: 'US dollars ($)', curILS: 'Israeli new shekels (₪)',
+    rateLabel: 'Exchange rate: shekels for 1 US dollar',
+    rateBtn: "Get today's rate",
+    rateLoading: 'Getting the rate…',
+    rateEcb: v => 'European Central Bank rate from ' + v.date + '. You can type a different rate.',
+    rateManual: 'Rate typed in by hand.',
+    rateFail: 'Could not get the rate. Type it in (shekels for 1 US dollar).',
+    rateBad: 'Type a number of shekels for 1 dollar, for example 3.65.',
+    needRate: 'Set the exchange rate above before starting.',
+    mgmtLabel: '1. Paste the workspace management key',
+    remember: 'Remember the management key on this computer (leave unticked on shared or classroom computers)',
+    loadBtn: 'Show keys',
+    pickLabel: '2. Click one key to show it, or cycle through a whole workspace below',
+    cycleLabel: 'Cycle through every key in a workspace',
+    cycleWsLabel: 'Workspace', dwellLabel: 'Show each key for',
+    cycleBtn: 'Start cycling',
+    entireClass: 'Entire Class',
+    includeAll: 'Include “Entire Class” (all keys added together) in the cycle',
+    allOnlyBtn: 'Show Entire Class only',
+    heroLeftAll: 'Money left for the entire class', heroSpentAll: 'Money the entire class has spent',
+    noLimitAll: ' · not every key has a spending limit',
+    atBy: v => v.plain + ' at ' + v.time + ' · ' + v.name,
+    noCycleKeys: 'This workspace has no enabled keys to cycle through.',
+    position: v => 'key ' + v.i + ' of ' + v.n,
+    paused: 'paused', pause: 'Pause', resume: 'Resume',
+    pollLabel: 'Check for new spending every',
+    seconds: v => Number(v.n) === 1 ? '1 second' : v.n + ' seconds',
+    needKey: 'Paste the management key first.',
+    loading: 'Loading keys…',
+    noKeys: 'No API keys found in any workspace of this account. Create one on openrouter.ai, then click Show keys again.',
+    workspace: v => 'Workspace: ' + v.name,
+    unnamed: 'Unnamed key', disabled: ' (disabled)', lastUsed: '  ← last used',
+    listSpent: v => 'spent ' + v.m, listLimit: v => ' · limit ' + v.m, listNoLimit: ' · no limit',
+    errAuth: v => 'OpenRouter rejected the management key (' + v.msg + '). It must be a management key from openrouter.ai/settings/management-keys, not a regular API key.',
+    err404: 'That key no longer exists in this workspace.',
+    err429: 'OpenRouter says too many requests. Choose a slower check interval.',
+    errOther: v => 'OpenRouter error ' + v.status + ': ' + v.msg,
+    errNet: 'Could not reach openrouter.ai. Check the internet connection.',
+    goBack: ' Press Esc to go back.',
+    live: v => 'Live · checks every ' + v.n + 's',
+    stale: v => 'Can’t reach OpenRouter, retrying (last update ' + v.time + ')',
+    heroLeft: 'Money left on this key', heroSpent: 'Money this key has spent',
+    ofLimit: v => 'of ' + v.limit + ' · ' + v.spent + ' spent so far',
+    resets: v => ' (limit resets ' + v.when + ')',
+    noLimit: ' · this key has no spending limit',
+    tClass: 'Spent this class', tLast: 'Last AI request', tRate: 'At this pace',
+    since: v => v.plain + ' since ' + v.time,
+    at: v => v.plain + ' at ' + v.time,
+    waiting: 'waiting for the first request…',
+    perHour: 'per hour if the class keeps going like this',
+    perHourWait: 'per hour (shows after the first minute of use)',
+    rateNote: v => '1 US dollar = ' + v.rate + ' shekels · ' + (v.manual ? 'rate set by hand' : 'European Central Bank rate, ' + v.date),
+    themeBtn: 'Light / dark', fsBtn: 'Full screen', backBtn: 'Change key',
+    langBtn: 'עברית · ₪', // names the language and currency the button switches to
+    noRate: 'No exchange rate yet, so amounts are in US dollars',
+    nothing: 'nothing yet',
+    tiny: v => v.cur === 'ILS' ? 'less than 1 agora (' + v.n + ' agorot)' : 'less than 1 cent (' + v.n + '¢)',
+    sub: v => v.cur === 'ILS' ? (v.n === 1 ? 'about 1 agora' : 'about ' + v.n + ' agorot')
+                              : (v.n === 1 ? 'about 1 cent' : 'about ' + v.n + ' cents'),
+    big: v => 'about ' + v.m
+  },
+  he: {
+    title: 'לוח עלויות AI',
+    subtitle: 'מציג על המקרן, בזמן אמת, כמה כסף הוציא מפתח API של OpenRouter בזמן שהכיתה משתמשת בו.',
+    language: 'שפה', currency: 'מטבע',
+    curUSD: 'דולר אמריקאי ($)', curILS: 'שקל חדש (₪)',
+    rateLabel: 'שער חליפין: כמה שקלים שווה דולר אחד',
+    rateBtn: 'שער עדכני',
+    rateLoading: 'מביא את השער…',
+    rateEcb: v => 'שער הבנק המרכזי האירופי מתאריך ' + v.date + '. אפשר להקליד שער אחר.',
+    rateManual: 'שער שהוקלד ידנית.',
+    rateFail: 'לא הצלחנו להביא את השער. הקלידו אותו (כמה שקלים שווה דולר אחד).',
+    rateBad: 'הקלידו כמה שקלים שווה דולר אחד, למשל 3.65.',
+    needRate: 'קבעו שער חליפין למעלה לפני שמתחילים.',
+    mgmtLabel: '1. הדביקו את מפתח הניהול (management key) של סביבת העבודה',
+    remember: 'לזכור את מפתח הניהול במחשב הזה (השאירו לא מסומן במחשב משותף או במחשב של הכיתה)',
+    loadBtn: 'הצגת מפתחות',
+    pickLabel: '2. לחצו על מפתח אחד כדי להציג אותו, או עברו בין כל המפתחות של סביבת עבודה למטה',
+    cycleLabel: 'מעבר בין כל המפתחות בסביבת עבודה',
+    cycleWsLabel: 'סביבת עבודה', dwellLabel: 'להציג כל מפתח במשך',
+    cycleBtn: 'התחלת מעבר בין המפתחות',
+    entireClass: 'כל הכיתה',
+    includeAll: 'לכלול במעבר את "כל הכיתה" (כל המפתחות ביחד)',
+    allOnlyBtn: 'להציג רק את כל הכיתה',
+    heroLeftAll: 'כסף שנשאר לכל הכיתה', heroSpentAll: 'כסף שכל הכיתה הוציאה',
+    noLimitAll: ' · לא לכל המפתחות יש מגבלת הוצאה',
+    atBy: v => v.plain + ' בשעה ' + v.time + ' · ' + v.name,
+    noCycleKeys: 'אין בסביבת העבודה הזו מפתחות פעילים למעבר ביניהם.',
+    position: v => 'מפתח ' + v.i + ' מתוך ' + v.n,
+    paused: 'מושהה', pause: 'השהיה', resume: 'המשך',
+    pollLabel: 'לבדוק הוצאות חדשות כל',
+    seconds: v => Number(v.n) === 1 ? 'שנייה אחת' : v.n + ' שניות',
+    needKey: 'הדביקו קודם את מפתח הניהול.',
+    loading: 'טוען מפתחות…',
+    noKeys: 'לא נמצאו מפתחות API באף סביבת עבודה בחשבון. צרו מפתח ב-openrouter.ai ולחצו שוב על "הצגת מפתחות".',
+    workspace: v => 'סביבת עבודה: ' + v.name,
+    unnamed: 'מפתח ללא שם', disabled: ' (מושבת)', lastUsed: '  ← בשימוש אחרון',
+    listSpent: v => 'הוצאה ' + v.m, listLimit: v => ' · מגבלה ' + v.m, listNoLimit: ' · ללא מגבלה',
+    errAuth: v => 'OpenRouter דחה את מפתח הניהול (' + v.msg + '). צריך מפתח ניהול מ-openrouter.ai/settings/management-keys, לא מפתח API רגיל.',
+    err404: 'המפתח הזה כבר לא קיים בסביבת העבודה.',
+    err429: 'OpenRouter מדווח על יותר מדי בקשות. בחרו מרווח בדיקה ארוך יותר.',
+    errOther: v => 'שגיאת OpenRouter ' + v.status + ': ' + v.msg,
+    errNet: 'אין חיבור ל-openrouter.ai. בדקו את החיבור לאינטרנט.',
+    goBack: ' לחצו Esc כדי לחזור.',
+    live: v => 'בזמן אמת · בדיקה כל ' + v.n + ' שניות',
+    stale: v => 'אין חיבור ל-OpenRouter, מנסה שוב (עדכון אחרון ' + v.time + ')',
+    heroLeft: 'כסף שנשאר במפתח', heroSpent: 'כסף שהמפתח הוציא',
+    ofLimit: v => 'מתוך ' + v.limit + ' · ' + v.spent + ' הוצאו עד עכשיו',
+    resets: v => ' (המגבלה מתאפסת ' + v.when + ')',
+    noLimit: ' · למפתח הזה אין מגבלת הוצאה',
+    tClass: 'הוצאה בשיעור הזה', tLast: 'בקשת ה-AI האחרונה', tRate: 'בקצב הזה',
+    since: v => v.plain + ' מאז ' + v.time,
+    at: v => v.plain + ' בשעה ' + v.time,
+    waiting: 'מחכים לבקשה הראשונה…',
+    perHour: 'לשעה, אם הכיתה תמשיך ככה',
+    perHourWait: 'לשעה (יוצג אחרי הדקה הראשונה)',
+    rateNote: v => 'דולר אחד = ' + v.rate + ' ₪ · ' + (v.manual ? 'שער שהוקלד ידנית' : 'שער הבנק המרכזי האירופי, ' + v.date),
+    themeBtn: 'בהיר / כהה', fsBtn: 'מסך מלא', backBtn: 'החלפת מפתח',
+    langBtn: 'English · $',
+    noRate: 'אין עדיין שער חליפין, ולכן הסכומים מוצגים בדולרים',
+    nothing: 'עדיין כלום',
+    tiny: v => v.cur === 'ILS' ? 'פחות מאגורה אחת (' + v.n + ' אגורות)' : 'פחות מסנט אחד (' + v.n + ' סנט)',
+    sub: v => v.cur === 'ILS' ? (v.n === 1 ? 'בערך אגורה אחת' : 'בערך ' + v.n + ' אגורות')
+                              : (v.n === 1 ? 'בערך סנט אחד' : 'בערך ' + v.n + ' סנט'),
+    big: v => 'בערך ' + v.m
+  }
+};
+function t(key, vars){
+  const s = STR[lang][key] !== undefined ? STR[lang][key] : STR.en[key];
+  return typeof s === 'function' ? s(vars || {}) : s;
+}
+const locale = () => lang === 'he' ? 'he-IL' : 'en-US';
+
+// ---- storage (all optional; page works without it) ----
+const store = {
+  get(k){ try{ return localStorage.getItem(k); }catch{ return null; } },
+  set(k,v){ try{ v==null ? localStorage.removeItem(k) : localStorage.setItem(k,v); }catch{} }
+};
+
+// ---- formatting. All amounts arrive in USD and are converted here. ----
+// Shekels are shown only when a valid rate exists; otherwise fall back to dollars.
+const showIls = () => currency === 'ILS' && ilsPerUsd > 0;
+const toShown = usd => showIls() ? usd * ilsPerUsd : usd;
+// signed: always show "+", placed by Intl so it sits correctly in right-to-left text.
+function money(usd, digits, signed){
+  if(usd==null || !isFinite(usd)) return '—';
+  const v = toShown(usd);
+  const d = digits != null ? digits : (Math.abs(v) >= 100 ? 2 : 4);
+  return new Intl.NumberFormat(locale(), {style:'currency', currency: showIls() ? 'ILS' : 'USD',
+    minimumFractionDigits:d, maximumFractionDigits:d, signDisplay: signed ? 'always' : 'auto'}).format(v);
+}
+function plain(usd){
+  if(usd==null || !isFinite(usd)) return '';
+  if(usd === 0) return t('nothing');
+  const v = toShown(usd), cur = showIls() ? 'ILS' : 'USD';
+  if(v < 0.01) return t('tiny', {cur, n:(v*100).toFixed(2)});
+  if(v < 1) return t('sub', {cur, n:Math.round(v*100)});
+  return t('big', {m:money(usd, 2)});
+}
+function clock(d){ return d.toLocaleTimeString(locale(), {hour:'numeric',minute:'2-digit',second:'2-digit'}); }
+
+// ---- OpenRouter API ----
+class ApiError extends Error{ constructor(status,msg){ super(msg); this.status=status; } }
+async function api(path){
+  let res;
+  try{ res = await fetch(API + path, {headers:{Authorization:'Bearer ' + mgmtKey}}); }
+  catch{ throw new ApiError(0, ''); }
+  let body = null;
+  try{ body = await res.json(); }catch{}
+  if(!res.ok){
+    const m = body && body.error && body.error.message || ('HTTP ' + res.status);
+    throw new ApiError(res.status, m);
+  }
+  return body;
+}
+function explain(e){
+  if(e.status === 401 || e.status === 403) return t('errAuth', {msg:e.message});
+  if(e.status === 404) return t('err404');
+  if(e.status === 429) return t('err429');
+  return e.status ? t('errOther', {status:e.status, msg:e.message}) : t('errNet');
+}
+// Pages through a list endpoint; `path` already ends in "?" or "&".
+async function listAll(path){
+  const all = [];
+  for(let page = 0; page < MAX_PAGES; page++){
+    const body = await api(path + 'offset=' + page*PAGE_SIZE);
+    const rows = (body && body.data) || [];
+    all.push(...rows);
+    if(rows.length < PAGE_SIZE) break;
+  }
+  return all;
+}
+// Without workspace_id, OpenRouter returns only the default workspace's keys.
+const listKeys = wsId => listAll('/keys?' + (wsId ? 'workspace_id=' + encodeURIComponent(wsId) + '&' : ''));
+const listWorkspaces = () => listAll('/workspaces?limit=' + PAGE_SIZE + '&');
+
+// Keys from every workspace, tagged with the workspace name.
+// If workspaces cannot be listed, fall back to the default workspace (listKeys reports any auth error).
+async function listAllKeys(){
+  let workspaces = [];
+  try{ workspaces = await listWorkspaces(); }catch{ workspaces = []; }
+  if(!workspaces.length) return {keys: await listKeys(), multi: false};
+  const perWs = await Promise.all(workspaces.map(ws => listKeys(ws.id)));
+  const keys = perWs.flatMap((ks, i) => ks.map(k => ({...k, wsId: workspaces[i].id, wsName: workspaces[i].name || ''})));
+  return {keys, multi: workspaces.length > 1};
+}
+
+async function getKey(hash){
+  const body = await api('/keys/' + encodeURIComponent(hash));
+  return (body && body.data) || body;
+}
+// The docs do not say whether GET /keys/{hash} reaches keys outside the default workspace,
+// so on 404 read the key from its workspace's list instead, and keep doing that.
+async function getKeyFor(hash, s){
+  if(!s.viaList){
+    try{ return await getKey(hash); }
+    catch(e){ if(e.status !== 404 || !s.wsId) throw e; s.viaList = true; }
+  }
+  const k = (await listKeys(s.wsId)).find(x => x.hash === hash);
+  if(!k) throw new ApiError(404, 'not found');
+  return k;
+}
+
+// ---- exchange rate ----
+function setRateMsg(text, isErr){ const m=$('rateMsg'); m.textContent=text||''; m.className=isErr?'err':''; }
+function rateMsgFor(){ return rateSrc === 'manual' ? t('rateManual') : rateSrc ? t('rateEcb', {date:rateSrc}) : ''; }
+function setRate(r, src){
+  ilsPerUsd = r; rateSrc = src;
+  store.set('cb_rate', String(r)); store.set('cb_rate_src', src);
+  $('rate').value = r;
+  setRateMsg(rateMsgFor(), false);
+  refreshAmounts();
+}
+async function fetchRate(){
+  $('rateBtn').disabled = true; setRateMsg(t('rateLoading'), false);
+  try{
+    const res = await fetch(RATE_URL);
+    const j = res.ok ? await res.json() : null;
+    const r = j && j.rates && j.rates.ILS;
+    if(!(r > 0)) throw new Error('no rate');
+    setRate(r, j.date || '');
+  }catch{ setRateMsg(t('rateFail'), true); }
+  finally{ $('rateBtn').disabled = false; }
+}
+function onRateTyped(){
+  const r = parseFloat($('rate').value);
+  if(!(r > 0 && r < MAX_ILS_PER_USD)){ setRateMsg(t('rateBad'), true); return; }
+  setRate(r, 'manual');
+}
+
+// ---- language and currency ----
+function applyLang(){
+  const root = document.documentElement;
+  root.lang = lang; root.dir = lang === 'he' ? 'rtl' : 'ltr';
+  document.title = t('title');
+  document.querySelectorAll('[data-t]').forEach(el => { el.textContent = t(el.dataset.t); });
+  [...$('pollSel').options, ...$('dwellSel').options].forEach(o => { o.textContent = t('seconds', {n:o.value}); });
+  setRateMsg(rateMsgFor(), false);
+  refreshAmounts();
+}
+function setCurrency(c){
+  currency = c; store.set('cb_cur', c); $('curSel').value = c;
+  $('rateRow').hidden = c !== 'ILS';
+  if(c === 'ILS' && !(ilsPerUsd > 0)) fetchRate();
+  refreshAmounts();
+}
+// Redraw whatever is on screen so language or currency changes apply immediately.
+function refreshAmounts(){
+  if(lastKeys.length) renderKeyList(lastKeys);
+  if(state){
+    $('flash').textContent = ''; // drop a flash formatted in the old language or currency
+    render();
+    if(!$('status').classList.contains('stale')) setLive();
+  }
+}
+
+// ---- setup screen ----
+function setMsg(text, isErr){ const m=$('setupMsg'); m.textContent=text||''; m.className=isErr?'err':''; }
+
+async function loadKeys(){
+  mgmtKey = $('mgmt').value.trim();
+  if(!mgmtKey){ setMsg(t('needKey'), true); return; }
+  store.set('cb_mgmt', $('remember').checked ? mgmtKey : null);
+  $('loadBtn').disabled = true; setMsg(t('loading'));
+  try{
+    const {keys, multi} = await listAllKeys();
+    lastKeys = keys; multiWs = multi;
+    renderKeyList(keys);
+    setMsg(keys.length ? '' : t('noKeys'), !keys.length);
+  }catch(e){ lastKeys = []; $('pick').hidden = true; setMsg(explain(e), true); }
+  finally{ $('loadBtn').disabled = false; }
+}
+
+function renderKeyList(keys){
+  const ul = $('keyList'); ul.textContent = '';
+  const lastHash = store.get('cb_hash');
+  let ws = null;
+  keys.forEach(k => {
+    if(multiWs && k.wsId !== ws){
+      ws = k.wsId;
+      const h = document.createElement('li'); h.className = 'ws';
+      h.textContent = t('workspace', {name: k.wsName || '—'});
+      ul.appendChild(h);
+    }
+    const li = document.createElement('li');
+    li.tabIndex = 0; li.dataset.hash = k.hash;
+    if(k.disabled) li.className = 'off';
+    const name = document.createElement('span');
+    name.textContent = (k.name || t('unnamed')) + (k.disabled ? t('disabled') : '') + (k.hash === lastHash ? t('lastUsed') : '');
+    const meta = document.createElement('span'); meta.className = 'meta';
+    meta.textContent = t('listSpent', {m:money(k.usage)}) + (k.limit != null ? t('listLimit', {m:money(k.limit)}) : t('listNoLimit'));
+    li.append(name, meta);
+    li.onclick = () => startBoard('single', [k]);
+    li.onkeydown = e => { if(e.key === 'Enter') startBoard('single', [k]); };
+    ul.appendChild(li);
+  });
+  renderCycleWorkspaces(keys);
+  $('pick').hidden = !keys.length;
+}
+
+// Workspace choices for cycling: every workspace that has keys, in list order.
+function renderCycleWorkspaces(keys){
+  const sel = $('cycleWsSel'), keep = sel.value || store.get('cb_cycle_ws') || '';
+  sel.textContent = '';
+  const seen = new Set();
+  keys.forEach(k => {
+    const id = k.wsId || '';
+    if(seen.has(id)) return;
+    seen.add(id);
+    const o = document.createElement('option'); o.value = id; o.textContent = k.wsName || '—';
+    sel.appendChild(o);
+  });
+  if(seen.has(keep)) sel.value = keep;
+  $('cycleWsWrap').hidden = !multiWs;
+}
+
+// Enabled keys of the workspace chosen in the cycle box, or null (with a message) if there are none.
+function chosenWorkspaceKeys(){
+  const wsId = $('cycleWsSel').value;
+  store.set('cb_cycle_ws', wsId); store.set('cb_dwell', $('dwellSel').value);
+  store.set('cb_include_all', $('includeAll').checked ? '1' : '0');
+  const keys = lastKeys.filter(k => (k.wsId || '') === wsId && !k.disabled);
+  if(!keys.length){ setMsg(t('noCycleKeys'), true); return null; }
+  return keys;
+}
+function startCycle(){
+  const keys = chosenWorkspaceKeys();
+  if(!keys) return;
+  const order = keys.map(k => k.hash);
+  startBoard('cycle', keys, $('includeAll').checked ? [ALL, ...order] : order);
+}
+function startEntireClass(){
+  const keys = chosenWorkspaceKeys();
+  if(keys) startBoard('cycle', keys, [ALL]);
+}
+
+// ---- board ----
+// mode 'single': one key, polled with GET /keys/{hash}.
+// mode 'cycle': every enabled key of one workspace is tracked with one list request per poll;
+// `order` lists what is shown in turn (key hashes and/or ALL). Only one entry means no rotation.
+function startBoard(mode, keys, order){
+  if(currency === 'ILS' && !(ilsPerUsd > 0)){ setMsg(t('needRate'), true); return; }
+  pollSeconds = parseInt($('pollSel').value, 10) || 5;
+  store.set('cb_poll', String(pollSeconds));
+  if(mode === 'single') store.set('cb_hash', keys[0].hash);
+  const now = Date.now(), track = {};
+  keys.forEach(k => {
+    track[k.hash] = {name:k.name || '', startUsage:k.usage||0, lastUsage:k.usage||0,
+                     lastChange:null, lastChangeTime:null, lastKey:k};
+  });
+  state = {mode, wsId:keys[0].wsId || keys[0].workspace_id || null, wsName:multiWs ? (keys[0].wsName || '') : '',
+           hashes:order || keys.map(k => k.hash), idx:0, track, startTime:now, okTime:now, viaList:false,
+           paused:false, dwell:parseInt($('dwellSel').value, 10) || 10};
+  $('setup').hidden = true; $('board').hidden = false;
+  $('pauseBtn').hidden = !rotates();
+  showKey(0); setLive();
+  clearInterval(pollTimer);
+  pollTimer = setInterval(poll, pollSeconds*1000);
+}
+
+function stopBoard(){
+  clearInterval(pollTimer); pollTimer = null;
+  clearInterval(cycleTimer); cycleTimer = null;
+  state = null;
+  if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  $('board').hidden = true; $('setup').hidden = false;
+  loadKeys();
+}
+
+// ---- cycling ----
+function showKey(idx){
+  const n = state.hashes.length;
+  state.idx = ((idx % n) + n) % n;
+  const f = $('flash'); f.textContent = ''; f.classList.remove('show');
+  render();
+  if(state.mode === 'cycle') restartCycle();
+}
+const rotates = () => !!state && state.mode === 'cycle' && state.hashes.length > 1;
+function restartCycle(){
+  clearInterval(cycleTimer); cycleTimer = null;
+  if(rotates() && !state.paused) cycleTimer = setInterval(() => showKey(state.idx + 1), state.dwell*1000);
+}
+function stepKey(d){ if(rotates()) showKey(state.idx + d); }
+function togglePause(){
+  if(!rotates()) return;
+  state.paused = !state.paused;
+  restartCycle(); render();
+}
+
+// ---- polling ----
+async function poll(){
+  const s = state;
+  if(!s) return;
+  try{
+    const keys = s.mode === 'cycle' ? await listKeys(s.wsId) : [await getKeyFor(s.hashes[0], s)];
+    if(state !== s) return;
+    s.okTime = Date.now();
+    // Flash the spend that belongs to what is on screen: one key, or all keys for Entire Class.
+    const showing = s.hashes[s.idx];
+    let shown = 0;
+    keys.forEach(k => {
+      const tr = s.track[k.hash];
+      if(!tr) return;
+      const d = applyUsage(tr, k);
+      if(showing === ALL || showing === k.hash) shown += d;
+    });
+    render(); setLive();
+    if(shown > 0) showFlash(shown);
+  }catch(e){
+    if(state !== s) return;
+    if(e.status === 401 || e.status === 403 || e.status === 404){
+      clearInterval(pollTimer); pollTimer = null;
+      setStatus(explain(e) + t('goBack'), true);
+      return;
+    }
+    setStatus(t('stale', {time:clock(new Date(s.okTime))}), true);
+  }
+}
+
+// Updates one key's tracker; returns the new spend (0 if none).
+function applyUsage(tr, k){
+  const usage = k.usage || 0, delta = usage - tr.lastUsage;
+  if(delta < 0){ tr.startUsage = usage; } // usage went down (key reset): restart the class count
+  tr.lastUsage = usage; tr.lastKey = k;
+  if(delta <= 1e-9) return 0;
+  tr.lastChange = delta; tr.lastChangeTime = Date.now();
+  return delta;
+}
+
+function showFlash(delta){
+  const f = $('flash');
+  f.textContent = money(delta, null, true);
+  f.classList.remove('show'); void f.offsetWidth; f.classList.add('show');
+}
+
+function setStatus(text, stale){ const s=$('status'); s.textContent=text; s.classList.toggle('stale', !!stale); }
+
+function render(){
+  const tr = cur(), k = tr.lastKey;
+  const usage = k.usage || 0;
+  const hasLimit = k.limit != null && k.limit_remaining != null;
+  $('keyName').textContent = tr.name || t('unnamed');
+  const where = [state.wsName];
+  if(rotates()) where.push(t('position', {i:state.idx + 1, n:state.hashes.length}) + (state.paused ? ' · ' + t('paused') : ''));
+  $('wsLine').textContent = where.filter(Boolean).join(' · ');
+  $('pauseBtn').textContent = state.paused ? t('resume') : t('pause');
+  if(hasLimit){
+    const reset = k.limit_reset ? t('resets', {when:(RESET[lang][k.limit_reset] || k.limit_reset)}) : '';
+    $('heroLabel').textContent = t(tr.isAll ? 'heroLeftAll' : 'heroLeft');
+    $('heroValue').textContent = money(k.limit_remaining);
+    $('heroPlain').textContent = t('ofLimit', {limit:money(k.limit), spent:money(usage)}) + reset;
+    const pct = k.limit ? 100*k.limit_remaining/k.limit : 0;
+    $('bar').style.width = Math.max(0, Math.min(100, Math.round(pct*10)/10)) + '%';
+    $('barWrap').hidden = false;
+  }else{
+    $('heroLabel').textContent = t(tr.isAll ? 'heroSpentAll' : 'heroSpent');
+    $('heroValue').textContent = money(usage);
+    $('heroPlain').textContent = plain(usage) + t(tr.isAll ? 'noLimitAll' : 'noLimit');
+    $('barWrap').hidden = true;
+  }
+  renderTiles(tr);
+  $('rateNote').textContent = showIls()
+    ? t('rateNote', {rate:ilsPerUsd.toFixed(4), manual:rateSrc === 'manual', date:rateSrc})
+    : currency === 'ILS' ? t('noRate') : '';
+}
+
+const setLive = () => setStatus(t('live', {n:pollSeconds}), false);
+
+function renderTiles(tr){
+  const cls = tr.lastUsage - tr.startUsage;
+  const mins = (Date.now() - state.startTime) / 60000;
+  $('tClass').textContent = money(cls);
+  $('tClassSub').textContent = t('since', {plain:plain(cls), time:clock(new Date(state.startTime))});
+  if(tr.lastChange != null){
+    $('tLast').textContent = money(tr.lastChange);
+    $('tLastSub').textContent = t(tr.lastChangeBy ? 'atBy' : 'at', {plain:plain(tr.lastChange), time:clock(new Date(tr.lastChangeTime)), name:tr.lastChangeBy});
+  }else{
+    $('tLast').textContent = '—';
+    $('tLastSub').textContent = t('waiting');
+  }
+  const enough = mins*60 >= RATE_MIN_SECONDS && cls > 0;
+  $('tRate').textContent = enough ? money(cls / mins * 60) : '—';
+  $('tRateSub').textContent = enough ? t('perHour') : t('perHourWait');
+}
+
+// ---- controls ----
+function toggleTheme(){
+  const next = document.documentElement.dataset.theme === 'dark' ? 'light' : 'dark';
+  document.documentElement.dataset.theme = next; store.set('cb_theme', next);
+}
+function toggleFullscreen(){
+  if(document.fullscreenElement) document.exitFullscreen().catch(()=>{});
+  else if(document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(()=>{});
+}
+
+$('loadBtn').onclick = loadKeys;
+$('mgmt').onkeydown = e => { if(e.key === 'Enter') loadKeys(); };
+$('remember').onchange = () => { if(!$('remember').checked) store.set('cb_mgmt', null); };
+function setLang(l){ lang = l; $('langSel').value = l; store.set('cb_lang', l); applyLang(); }
+// The board switch pairs language with currency: Hebrew shows shekels, English shows dollars.
+// The setup dropdowns stay independent.
+function toggleBoardLang(){
+  const toHe = lang !== 'he';
+  setCurrency(toHe ? 'ILS' : 'USD');
+  setLang(toHe ? 'he' : 'en');
+}
+$('langSel').onchange = () => setLang($('langSel').value);
+$('langBtn').onclick = toggleBoardLang;
+$('curSel').onchange = () => setCurrency($('curSel').value);
+$('rate').onchange = onRateTyped;
+$('rateBtn').onclick = fetchRate;
+$('themeBtn').onclick = toggleTheme;
+$('fsBtn').onclick = toggleFullscreen;
+$('backBtn').onclick = stopBoard;
+$('cycleBtn').onclick = startCycle;
+$('allBtn').onclick = startEntireClass;
+$('pauseBtn').onclick = togglePause;
+// Match physical keys (e.code) so shortcuts also work with a Hebrew keyboard layout.
+document.addEventListener('keydown', e => {
+  if($('board').hidden || e.ctrlKey || e.metaKey || e.altKey) return;
+  if(e.code === 'Space'){
+    // Stop Space from also "clicking" a focused board button.
+    e.preventDefault();
+    if(document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    togglePause();
+  }
+  // "Next" follows reading direction: → in English, ← in Hebrew.
+  else if(e.key === 'ArrowRight' || e.key === 'ArrowLeft') stepKey((e.key === 'ArrowRight') !== (lang === 'he') ? 1 : -1);
+  else if(e.code === 'KeyF') toggleFullscreen();
+  else if(e.code === 'KeyT') toggleTheme();
+  else if(e.code === 'KeyL') toggleBoardLang();
+  else if(e.code === 'KeyK') stopBoard();
+  else if(e.key === 'Escape' && !document.fullscreenElement) stopBoard();
+});
+
+// ---- init ----
+(function init(){
+  document.documentElement.dataset.theme = store.get('cb_theme') === 'dark' ? 'dark' : 'light';
+  lang = store.get('cb_lang') === 'he' ? 'he' : 'en';
+  $('langSel').value = lang;
+  const r = parseFloat(store.get('cb_rate'));
+  if(r > 0 && r < MAX_ILS_PER_USD){ ilsPerUsd = r; rateSrc = store.get('cb_rate_src') || ''; $('rate').value = r; }
+  const p = store.get('cb_poll'); if(p && $('pollSel').querySelector('option[value="'+p+'"]')) $('pollSel').value = p;
+  const dw = store.get('cb_dwell'); if(dw && $('dwellSel').querySelector('option[value="'+dw+'"]')) $('dwellSel').value = dw;
+  if(store.get('cb_include_all') === '0') $('includeAll').checked = false;
+  applyLang();
+  const c = store.get('cb_cur') === 'ILS' ? 'ILS' : 'USD';
+  $('curSel').value = c;
+  setCurrency(c);
+  // Refresh a saved ECB rate on each load (the saved one stays if the fetch fails);
+  // keep a hand-typed rate until the teacher asks for a new one.
+  if(c === 'ILS' && ilsPerUsd > 0 && rateSrc !== 'manual') fetchRate();
+  const saved = store.get('cb_mgmt');
+  if(saved){ $('mgmt').value = saved; $('remember').checked = true; loadKeys(); }
+})();
+</script>
+</body>
+</html>
